@@ -2,9 +2,7 @@
 #include <TlHelp32.h> //for helper function
 #include <iostream>
 #include <vector>
-
-std::vector<void*> hits;
-
+#include "cLib.h"
 
 DWORD findPidByName(const char *name) {
 
@@ -54,7 +52,7 @@ void writeAddress(HANDLE handleToProcess, void* memAddr, int data) {
     return;
 }
 
-void scanPage(HANDLE handleToProcess, void *pageAddress, SIZE_T pageSize, int searchByte = -1) {
+void scanPage(HANDLE handleToProcess, void *pageAddress, SIZE_T pageSize, int searchByte, std::vector<void*> &returnBuffer) {
     //this scans the page for all addresses contained
     //page given ie 0x000000f000
     //this function searches memory addresses within the page //page size is typically 4096
@@ -72,7 +70,7 @@ void scanPage(HANDLE handleToProcess, void *pageAddress, SIZE_T pageSize, int se
         //detect hits
         if (data == searchByte) {
             //add hit to global vector
-            hits.push_back(address);
+            returnBuffer.push_back(address);
 
             //print to terminal hit addr
             std::cout << "Hit: " << std::flush;
@@ -84,7 +82,7 @@ void scanPage(HANDLE handleToProcess, void *pageAddress, SIZE_T pageSize, int se
 
 }
 
-void scanPageRanges(HANDLE handleToProcess, void *baseAddress, int pagesCount, SIZE_T pageSize, int searchByte = -1) {
+void scanPageRanges(HANDLE handleToProcess, void *baseAddress, int pagesCount, SIZE_T pageSize, int searchByte, std::vector<void*> &returnBuffer) {
     //this gets all pages, in a range, then calls another function to search the page itself
     for (int i = 0; i < pagesCount; i++) {
 
@@ -95,13 +93,13 @@ void scanPageRanges(HANDLE handleToProcess, void *baseAddress, int pagesCount, S
         //std::cout << "Scanning page: " << currentPage << std::endl;
 
         //call span page function to scan the page
-        scanPage(handleToProcess, currentPage, pageSize, searchByte=searchByte);
+        scanPage(handleToProcess, currentPage, pageSize, searchByte, returnBuffer);
 
     }
 }
 
-void scanVirtualPages(HANDLE handleToProcess, int searchByte = -1) {
-    //takes handle as arg, and scanes virtual mem space
+void scanVirtualPages(HANDLE handleToProcess, int searchByte, std::vector<void*> &returnBuffer) {
+    //takes handle as arg, and scans virtual memory for process
 
     //get the page size info
     SYSTEM_INFO sSysInfo = {};
@@ -135,7 +133,7 @@ void scanVirtualPages(HANDLE handleToProcess, int searchByte = -1) {
 
                     //further scanning of each table in here
                     int pagesCount = memInfo.RegionSize / sSysInfo.dwPageSize;
-                    scanPageRanges(handleToProcess, memInfo.BaseAddress, pagesCount, sSysInfo.dwPageSize, searchByte=searchByte);
+                    scanPageRanges(handleToProcess, memInfo.BaseAddress, pagesCount, sSysInfo.dwPageSize, searchByte, returnBuffer);
             }
         }
     }
@@ -169,83 +167,3 @@ HANDLE getProcess(DWORD pid) {
 }
 
 
-
-
-
-int main(int argc, char *argv[]) {
-    //define args
-
-    //PID
-    if (argc < 2) {
-        std::cout << "Usage: " << argv[0] << " <process_name.exe>\n";
-        return 1;
-    }
-    const char* processName = argv[1];
-
-    //search data 
-    int searchByte = 52;
-
-    //desired data
-    int newData = 69;
-    int newData2 = 0; //just a cache for cin >>
-
-    //get pid from name
-    auto pid = findPidByName(processName);
-
-    //scan addr -> global vector hits
-    HANDLE handleToProcess = getProcess(pid);
-    if (handleToProcess == nullptr) {return 1;}
-
-    
-
-    //scan pages
-    scanVirtualPages(handleToProcess, searchByte);
-
-
-    //display hits vector
-    std::cout << "Addresses with hit values:\n";
-    for (auto addr : hits) {
-        std::cout << addr << std::endl;
-    }
-
-    //copy hits
-    const std::vector<void*> hitsCopy = hits;
-
-    std::cout << "Waiting for change..." << std::flush;
-    std::cin >> newData2;
-
-    //clear hits
-    hits = {};
-
-    //search known hits again for new value
-    int data = 0;
-    for (auto addr: hitsCopy) {
-        readAddress(handleToProcess, addr, data);
-
-        if (data == newData2) {
-            hits.push_back(addr);
-
-            std::cout << "Hit: " << std::flush;
-            std::cout << addr << std::endl;
-            
-        }
-    }
-
-    //display hits vector
-    std::cout << "Addresses with hit values:\n";
-    for (auto addr : hits) {
-        std::cout << addr << std::endl;
-    }
-
-    std::cout << "Write? ..." << std::flush;
-    std::cin.get();
-
-    //write new values to addresses
-    for (auto addr : hits) {
-        writeAddress(handleToProcess, addr, newData);
-    }
-
-    std::cout << "Press enter to exit: " << std::flush;
-	std::cin.get();
-	return 0;
-}
