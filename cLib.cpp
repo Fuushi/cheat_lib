@@ -4,6 +4,13 @@
 #include <vector>
 #include "cLib.h"
 
+//get next address by reference
+void next(char *addr) {
+    //iterates the pointed addr by one
+    addr = (char*)pageAddress + i;
+}
+//create value overflow
+
 DWORD findPidByName(const char *name) {
 
     //declare handles
