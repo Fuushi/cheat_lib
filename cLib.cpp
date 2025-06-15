@@ -4,12 +4,11 @@
 #include <vector>
 #include "cLib.h"
 
-//get next address by reference
-void next(char *addr) {
-    //iterates the pointed addr by one
-    addr = (char*)pageAddress + i;
+
+// Increment the address by 1 byte
+void* nextPhysicalAddress(const void* addr) {
+    return (char*)addr + 1;
 }
-//create value overflow
 
 DWORD findPidByName(const char *name) {
 
@@ -41,12 +40,12 @@ DWORD findPidByName(const char *name) {
 	return 0;
 }
 
-void readAddress(HANDLE handleToProcess, void* memAddr, int &data) {
+void readAddress(const HANDLE handleToProcess, const void* memAddr, char &data) {
     ReadProcessMemory(handleToProcess, memAddr, &data, sizeof(data), nullptr);
     return;
 }
 
-void writeAddress(HANDLE handleToProcess, void* memAddr, int data) {
+void writeAddress(HANDLE handleToProcess, void* memAddr, char data) {
 
     if (WriteProcessMemory(handleToProcess, memAddr, &data, sizeof(data), nullptr)) {
         std::cout << "Written New Data: " << data << std::endl;
@@ -59,7 +58,14 @@ void writeAddress(HANDLE handleToProcess, void* memAddr, int data) {
     return;
 }
 
-void scanPage(HANDLE handleToProcess, void *pageAddress, SIZE_T pageSize, int searchByte, std::vector<void*> &returnBuffer) {
+void scanPage(
+    const HANDLE handleToProcess, 
+    void *pageAddress, 
+    SIZE_T pageSize, 
+    char searchByte, 
+    std::vector<void*> &returnBuffer, 
+    bool verbose
+) {
     //this scans the page for all addresses contained
     //page given ie 0x000000f000
     //this function searches memory addresses within the page //page size is typically 4096
@@ -71,7 +77,7 @@ void scanPage(HANDLE handleToProcess, void *pageAddress, SIZE_T pageSize, int se
         void* address = (char*)pageAddress + i;
 
         //read data -> cache
-        int data = -1;
+        char data = 1;
         readAddress(handleToProcess, address, data);
 
         //detect hits
@@ -79,9 +85,11 @@ void scanPage(HANDLE handleToProcess, void *pageAddress, SIZE_T pageSize, int se
             //add hit to global vector
             returnBuffer.push_back(address);
 
-            //print to terminal hit addr
-            std::cout << "Hit: " << std::flush;
-            std::cout << address << std::endl;
+            //print to terminal hit addr if verbose
+            if (verbose) {
+                std::cout << "Hit: " << std::flush;
+                std::cout << address << std::endl;
+            }
 
         }
 
@@ -89,23 +97,19 @@ void scanPage(HANDLE handleToProcess, void *pageAddress, SIZE_T pageSize, int se
 
 }
 
-void scanPageRanges(HANDLE handleToProcess, void *baseAddress, int pagesCount, SIZE_T pageSize, int searchByte, std::vector<void*> &returnBuffer) {
+void scanPageRanges(HANDLE handleToProcess, void *baseAddress, int pagesCount, SIZE_T pageSize, char searchByte, std::vector<void*> &returnBuffer) {
     //this gets all pages, in a range, then calls another function to search the page itself
     for (int i = 0; i < pagesCount; i++) {
 
         //generate Page address
         void* currentPage = (char*)baseAddress + i * pageSize;
 
-        //print page address to terminal
-        //std::cout << "Scanning page: " << currentPage << std::endl;
-
         //call span page function to scan the page
         scanPage(handleToProcess, currentPage, pageSize, searchByte, returnBuffer);
-
     }
 }
 
-void scanVirtualPages(HANDLE handleToProcess, int searchByte, std::vector<void*> &returnBuffer) {
+void scanVirtualPages(HANDLE handleToProcess, char searchByte, std::vector<void*> &returnBuffer) {
     //takes handle as arg, and scans virtual memory for process
 
     //get the page size info
@@ -118,29 +122,25 @@ void scanVirtualPages(HANDLE handleToProcess, int searchByte, std::vector<void*>
     //index
     void *currentScanAddress = 0;
 
-        while (true) {
-            //load bytes?
-            SIZE_T readBytes = 
-                VirtualQueryEx(handleToProcess, currentScanAddress, &memInfo, sizeof(MEMORY_BASIC_INFORMATION));
+    while (true) {
+        //load bytes wize with virtual query
+        SIZE_T readBytes = VirtualQueryEx(handleToProcess, currentScanAddress, &memInfo, sizeof(MEMORY_BASIC_INFORMATION));
 
-            //detect end of pages
-            if (!readBytes) {
-                return;
-            }
+        //detect end of pages
+        if (!readBytes) {
+            return;
+        }
 
-            currentScanAddress = (char *)memInfo.BaseAddress + memInfo.RegionSize;
+        currentScanAddress = (char *)memInfo.BaseAddress + memInfo.RegionSize;
 
-            //observe if memory is commited (set by application)
-            if (memInfo.State == MEM_COMMIT) {
-                //note more flag ie PAGE_READONLY & PAGE_EXECUTE_READWRTIE
+        //observe if memory is commited (set by application)
+        if (memInfo.State == MEM_COMMIT) {
+            //note more flag ie PAGE_READONLY & PAGE_EXECUTE_READWRTIE
 
-                if (memInfo.Protect == PAGE_READWRITE) {
-                    //std::cout << "Found READWRITE page(s) at base address: " << memInfo.BaseAddress << " Size: "
-                    //<< memInfo.RegionSize << " = pages count: " << memInfo.RegionSize / sSysInfo.dwPageSize << "\n";
-
-                    //further scanning of each table in here
-                    int pagesCount = memInfo.RegionSize / sSysInfo.dwPageSize;
-                    scanPageRanges(handleToProcess, memInfo.BaseAddress, pagesCount, sSysInfo.dwPageSize, searchByte, returnBuffer);
+            if (memInfo.Protect == PAGE_READWRITE) {
+                //inspect each page via sub function
+                int pagesCount = memInfo.RegionSize / sSysInfo.dwPageSize;
+                scanPageRanges(handleToProcess, memInfo.BaseAddress, pagesCount, sSysInfo.dwPageSize, searchByte, returnBuffer);
             }
         }
     }

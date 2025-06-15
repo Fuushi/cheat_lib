@@ -3,51 +3,34 @@
 #include <iostream>
 #include <vector>
 
+#include "memLib.h"
 #include "cLib.h"
+
+Bytes bytesHandler;
 
 //create lib interface
 int main(int argc, char *argv[]) {
 
-    //get args
+    //constants
+    const int data = 265;
+    const std::vector<char> bytes = bytesHandler.byte(data);
+
+    printBytes(bytes);
+
+    // get pid from args
     if (argc < 2) {
         std::cout << "Usage: " << argv[0] << " <process_name.exe>\n";
         return 1;
     }
     const char* processName = argv[1];
-    const int searchByte = std::stoi(argv[2]);
 
-    //ceate handle (clib obj)
+    //establish handle
     cLib handle(processName);
 
-    //define search condition
-    //from argv
+    handle.validateHandles();
 
-    //search
-    std::vector<void*> hits = handle.detect(searchByte);
+    std::vector<void*> addrs = handle.detect(bytes);
 
-    //display hits
-    std::cout << "Addresses with hit values: " << hits.size() << std::endl;
-    //for (auto addr : hits) {
-    //    std::cout << addr << std::endl;
-    //}
+    //write below (indev)
 
-    //define second search condition
-    int searchByte2 = -1;
-    std::cout << "Waiting for new value: " << std::flush;
-    std::cin >> searchByte2;
-
-    //search again (refine)
-    hits = handle.detect(searchByte2, hits);
-
-    //display hits
-    std::cout << "Addresses with hit values:\n";
-    for (auto addr : hits) {
-        std::cout << addr << std::endl;
-    }
-
-    //batch write
-    int newValue = 999;
-    handle.batchWrite(newValue, hits);
-
-    return 1;
 }
